@@ -65,7 +65,7 @@ func TestReadVaultToken(t *testing.T) {
 			vaultTokenMountPath: tmpFileName,
 		}
 
-		err := v.initVaultToken()
+		err := v.initVaultToken(context.Background())
 		require.NoError(t, err)
 		assert.Equal(t, tokenString, v.vaultToken)
 	})
@@ -75,7 +75,7 @@ func TestReadVaultToken(t *testing.T) {
 			vaultTokenMountPath: tmpFileName,
 		}
 
-		err := v.initVaultToken()
+		err := v.initVaultToken(context.Background())
 		require.NoError(t, err)
 		assert.NotEqual(t, "ThisIs-NOT-TheRootToken", v.vaultToken)
 	})
@@ -85,7 +85,7 @@ func TestReadVaultToken(t *testing.T) {
 			vaultToken: expectedTok,
 		}
 
-		err := v.initVaultToken()
+		err := v.initVaultToken(context.Background())
 
 		require.NoError(t, err)
 		assert.Equal(t, expectedTok, v.vaultToken)

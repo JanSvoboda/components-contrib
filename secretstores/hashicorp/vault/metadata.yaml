@@ -43,12 +43,12 @@ metadata:
     example: "tls-server"
     type: string
   - name: vaultTokenMountPath
-    required: true
+    required: false
     description: Path to file containing token
     example: "path/to/file"
     type: string
   - name: vaultToken
-    required: true
+    required: false
     description: Token for authentication within Vault.
     example: "tokenValue"
     type: string
@@ -74,4 +74,30 @@ metadata:
     description: |
       Vault value type. map means to parse the value into map[string]string, text means to use the value as a string. "map" sets the multipleKeyValuesPerSecret behavior. text makes Vault behave as a secret store with name/value semantics. Defaults to "map"
     example: "map"
+    type: string
+  - name: authMethod
+    required: true
+    description: |
+      Vault authentication method. Defaults to "token". Can have value of "cert", "appRole", "token".
+    example: "cert"
+    type: string
+  - name: clientKeyStorePath
+    required: false
+    description: The path to the client keystore holding the client certificate and private key. It is expected that this keystore contains only one pair of client certificate and private key.
+    example: "path/to/keystore/file/client.pkcs12"
+    type: string
+  - name: clientKeyStorePass
+    required: false
+    description: Password for pkcs12 file storing client certificate and private key.
+    example: "password"
+    type: string
+  - name: loginId
+    required: false
+    description: Required for authMethods "approle" or "userpass". The name of the user or the role ID to log in as.
+    example: "password"
+    type: string
+  - name: loginSecret
+    required: false
+    description: Required for authMethods "approle" or "userpass". The password of the user or the Secret ID to log in.
+    example: "password"
     type: string

@@ -28,6 +28,8 @@ import (
 	"reflect"
 	"strings"
 
+	"golang.org/x/crypto/pkcs12"
+
 	jsoniter "github.com/json-iterator/go"
 	"golang.org/x/net/http2"
 
@@ -38,26 +40,29 @@ import (
 )
 
 const (
-	defaultVaultAddress          string = "https://127.0.0.1:8200"
-	defaultVaultEnginePath       string = "secret"
-	componentVaultAddress        string = "vaultAddr"
-	componentCaCert              string = "caCert"
-	componentCaPath              string = "caPath"
-	componentCaPem               string = "caPem"
-	componentSkipVerify          string = "skipVerify"
-	componentTLSServerName       string = "tlsServerName"
-	componentVaultToken          string = "vaultToken"
-	componentVaultTokenMountPath string = "vaultTokenMountPath"
-	componentVaultKVPrefix       string = "vaultKVPrefix"
-	componentVaultKVUsePrefix    string = "vaultKVUsePrefix"
-	defaultVaultKVPrefix         string = "dapr"
-	vaultHTTPHeader              string = "X-Vault-Token"
-	vaultHTTPRequestHeader       string = "X-Vault-Request"
-	vaultEnginePath              string = "enginePath"
-	vaultValueType               string = "vaultValueType"
-	versionID                    string = "version_id"
+	defaultVaultAddress          string         = "https://127.0.0.1:8200"
+	defaultVaultEnginePath       string         = "secret"
+	defaultVaultAuthMethod       authMethodType = "token"
+	componentVaultAddress        string         = "vaultAddr"
+	componentCaCert              string         = "caCert"
+	componentCaPath              string         = "caPath"
+	componentCaPem               string         = "caPem"
+	componentSkipVerify          string         = "skipVerify"
+	componentTLSServerName       string         = "tlsServerName"
+	componentVaultToken          string         = "vaultToken"
+	componentVaultTokenMountPath string         = "vaultTokenMountPath"
+	componentVaultKVPrefix       string         = "vaultKVPrefix"
+	componentVaultKVUsePrefix    string         = "vaultKVUsePrefix"
+	defaultVaultKVPrefix         string         = "dapr"
+	vaultHTTPHeader              string         = "X-Vault-Token"
+	vaultHTTPRequestHeader       string         = "X-Vault-Request"
+	vaultEnginePath              string         = "enginePath"
+	vaultValueType               string         = "vaultValueType"
+	versionID                    string         = "version_id"
 
-	DataStr string = "data"
+	DataStr        string = "data"
+	AuthStr        string = "auth"
+	ClientTokenStr string = "client_token"
 )
 
 type valueType string
@@ -65,6 +70,15 @@ type valueType string
 const (
 	valueTypeMap  valueType = "map"
 	valueTypeText valueType = "text"
+)
+
+type authMethodType string
+
+const (
+	token    authMethodType = "token"
+	cert     authMethodType = "cert"
+	approle  authMethodType = "approle"
+	userpass authMethodType = "userpass"
 )
 
 var _ secretstores.SecretStore = (*vaultSecretStore)(nil)
@@ -79,11 +93,15 @@ var ErrNotFound = errors.New("secret key or version not exist")
 type vaultSecretStore struct {
 	client              *http.Client
 	vaultAddress        string
+	vaultAuthMethod     authMethodType
+	vaultNamespace      string
 	vaultToken          string
 	vaultTokenMountPath string
 	vaultKVPrefix       string
 	vaultEnginePath     string
 	vaultValueType      valueType
+	vaultLoginId        string
+	vaultLoginSecret    string
 
 	json jsoniter.API
 
@@ -91,6 +109,7 @@ type vaultSecretStore struct {
 }
 
 type VaultMetadata struct {
+	AuthMethod          string
 	CaCert              string
 	CaPath              string
 	CaPem               string
@@ -103,15 +122,22 @@ type VaultMetadata struct {
 	VaultTokenMountPath string
 	EnginePath          string
 	VaultValueType      string
+	VaultNamespace      string
+	ClientKeyStorePath  string
+	ClientKeyStorePass  string
+	LoginId             string
+	LoginSecret         string
 }
 
 // tlsConfig is TLS configuration to interact with HashiCorp Vault.
 type tlsConfig struct {
-	vaultCAPem      string
-	vaultCACert     string
-	vaultCAPath     string
-	vaultSkipVerify bool
-	vaultServerName string
+	vaultCAPem              string
+	vaultCACert             string
+	vaultCAPath             string
+	vaultSkipVerify         bool
+	vaultServerName         string
+	vaultClientKeyStorePath string
+	vaultClientKeyStorePass string
 }
 
 // vaultKVResponse is the response data from Vault KV.
@@ -128,6 +154,12 @@ type vaultListKVResponse struct {
 	} `json:"data"`
 }
 
+type vaultLoginResponse struct {
+	Auth struct {
+		ClientToken string `json:"client_token"`
+	} `json:"auth"`
+}
+
 // NewHashiCorpVaultSecretStore returns a new HashiCorp Vault secret store.
 func NewHashiCorpVaultSecretStore(logger logger.Logger) secretstores.SecretStore {
 	return &vaultSecretStore{
@@ -138,7 +170,7 @@ func NewHashiCorpVaultSecretStore(logger logger.Logger) secretstores.SecretStore
 }
 
 // Init creates a HashiCorp Vault client.
-func (v *vaultSecretStore) Init(_ context.Context, meta secretstores.Metadata) error {
+func (v *vaultSecretStore) Init(ctx context.Context, meta secretstores.Metadata) error {
 	m := VaultMetadata{
 		VaultKVUsePrefix: true,
 	}
@@ -171,11 +203,41 @@ func (v *vaultSecretStore) Init(_ context.Context, meta secretstores.Metadata) e
 		}
 	}
 
-	v.vaultToken = m.VaultToken
-	v.vaultTokenMountPath = m.VaultTokenMountPath
-	initErr := v.initVaultToken()
-	if initErr != nil {
-		return initErr
+	// Generate TLS config
+	tlsConf := metadataToTLSConfig(&m)
+
+	// initialize http client with TLS config so that it can be used to fetch vault token if auth method is cert
+	client, err := v.createHTTPClient(tlsConf)
+	if err != nil {
+		return fmt.Errorf("couldn't create client using config: %w", err)
+	}
+
+	v.client = client
+
+	err = v.resolveAuthMethod(&m)
+	if err != nil {
+		return err
+	}
+
+	v.vaultNamespace = m.VaultNamespace
+
+	switch v.vaultAuthMethod {
+	case token:
+		v.vaultToken = m.VaultToken
+		v.vaultTokenMountPath = m.VaultTokenMountPath
+		initErr := v.initVaultToken()
+		if initErr != nil {
+			return initErr
+		}
+	case approle, userpass:
+		v.vaultLoginId = m.LoginId
+		v.vaultLoginSecret = m.LoginSecret
+		fallthrough
+	case cert:
+		initErr := v.vaultLogin(ctx)
+		if initErr != nil {
+			return initErr
+		}
 	}
 
 	vaultKVPrefix := m.VaultKVPrefix
@@ -185,16 +247,6 @@ func (v *vaultSecretStore) Init(_ context.Context, meta secretstores.Metadata) e
 		vaultKVPrefix = defaultVaultKVPrefix
 	}
 	v.vaultKVPrefix = vaultKVPrefix
-
-	// Generate TLS config
-	tlsConf := metadataToTLSConfig(&m)
-
-	client, err := v.createHTTPClient(tlsConf)
-	if err != nil {
-		return fmt.Errorf("couldn't create client using config: %w", err)
-	}
-
-	v.client = client
 
 	return nil
 }
@@ -213,6 +265,8 @@ func metadataToTLSConfig(meta *VaultMetadata) *tlsConfig {
 	tlsConf.vaultCAPem = meta.CaPem
 	tlsConf.vaultCAPath = meta.CaPath
 	tlsConf.vaultServerName = meta.TLSServerName
+	tlsConf.vaultClientKeyStorePath = meta.ClientKeyStorePath
+	tlsConf.vaultClientKeyStorePass = meta.ClientKeyStorePass
 
 	return &tlsConf
 }
@@ -396,6 +450,18 @@ func (v *vaultSecretStore) isSecretPath(key string) bool {
 	return !strings.HasSuffix(key, "/")
 }
 
+func (v *vaultSecretStore) resolveAuthMethod(m *VaultMetadata) error {
+	switch authMethodType(m.AuthMethod) {
+	case token, cert, approle, userpass:
+		v.vaultAuthMethod = authMethodType(m.AuthMethod)
+	case "":
+		v.vaultAuthMethod = token
+	default:
+		return fmt.Errorf("unsupported auth method: %s", m.AuthMethod)
+	}
+	return nil
+}
+
 // initVaultToken reads the vault token from the file if token is defined by mount path.
 func (v *vaultSecretStore) initVaultToken() error {
 	// Test that at least one of them are set if not return error
@@ -421,8 +487,91 @@ func (v *vaultSecretStore) initVaultToken() error {
 	return nil
 }
 
+func (v *vaultSecretStore) vaultLoginPayload() map[string]string {
+	if v.vaultAuthMethod == userpass {
+		return map[string]string{
+			"password": v.vaultLoginSecret,
+		}
+	}
+
+	if v.vaultAuthMethod == approle {
+		return map[string]string{
+			"role_id":   v.vaultLoginId,
+			"secret_id": v.vaultLoginSecret,
+		}
+	}
+
+	return map[string]string{}
+}
+
+func (v *vaultSecretStore) vaultLogin(ctx context.Context) error {
+	if v.vaultAuthMethod == cert && v.client.Transport.(*http.Transport).TLSClientConfig.Certificates == nil {
+		return fmt.Errorf("vault authentication method is %s but certificates are not set", string(v.vaultAuthMethod))
+	}
+
+	var vaultLoginPath string
+	if v.vaultAuthMethod == userpass {
+		vaultLoginPath = v.vaultAddress + "/v1" + "/auth/" + string(v.vaultAuthMethod) + "/login/" + v.vaultLoginId
+	} else {
+		vaultLoginPath = v.vaultAddress + "/v1" + "/auth/" + string(v.vaultAuthMethod) + "/login"
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, vaultLoginPath, nil)
+	if err != nil {
+		return fmt.Errorf("couldn't generate request: %s", err)
+	}
+
+	if v.vaultNamespace != "" {
+		httpReq.Header.Set("X-Vault-Namespace", v.vaultNamespace)
+	}
+
+	postBody, err := json.Marshal(v.vaultLoginPayload())
+	if err != nil {
+		return fmt.Errorf("couldn't marshal request body: %s", err)
+	}
+
+	httpReq.Body = io.NopCloser(bytes.NewReader(postBody))
+
+	httpresp, err := v.client.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("couldn't get secret: %s", err)
+	}
+
+	defer httpresp.Body.Close()
+
+	if httpresp.StatusCode != http.StatusOK {
+		var b bytes.Buffer
+		io.Copy(&b, httpresp.Body)
+
+		return fmt.Errorf("login couldn't get successful response, status code: %d, status: %s, response %s",
+			httpresp.StatusCode, httpresp.Status, b.String())
+	}
+
+	var d vaultLoginResponse
+
+	if err := json.NewDecoder(httpresp.Body).Decode(&d); err != nil {
+		return fmt.Errorf("couldn't decode response body: %s", err)
+	}
+
+	if d.Auth.ClientToken == "" {
+		return fmt.Errorf("couldn't get client token")
+	}
+
+	v.vaultToken = d.Auth.ClientToken
+
+	return nil
+}
+
 func (v *vaultSecretStore) createHTTPClient(config *tlsConfig) (*http.Client, error) {
 	tlsClientConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+
+	if config.vaultClientKeyStorePath != "" && config.vaultClientKeyStorePass != "" {
+		if cert, err := getClientKeyPair(config.vaultClientKeyStorePath, config.vaultClientKeyStorePass); err != nil {
+			return nil, err
+		} else {
+			tlsClientConfig.Certificates = append(tlsClientConfig.Certificates, *cert)
+		}
+	}
 
 	if config != nil && config.vaultSkipVerify {
 		v.logger.Infof("hashicorp vault: you are using 'skipVerify' to skip server config verify which is unsafe!")
@@ -494,6 +643,46 @@ func (v *vaultSecretStore) getRootCAsPools(vaultCAPem string, vaultCAPath string
 	}
 
 	return certPool, nil
+}
+
+// func getClientKeyPair(vaultClientCert string, vaultClientKey string, vaultClientCertPath string, vaultClientKeyPath string, vaultClientKeyStorePath string, vaultClientKeyStorePass string) (*tls.Certificate, error) {
+func getClientKeyPair(vaultClientKeyStorePath string, vaultClientKeyStorePass string) (*tls.Certificate, error) {
+	// load pkcs12 keystore and return it as *tls.Certificate
+	p12_data, err := os.ReadFile(vaultClientKeyStorePath)
+
+	if err != nil {
+		return nil, err
+	}
+
+	key, cert, err := pkcs12.Decode(p12_data, vaultClientKeyStorePass)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tls.Certificate{
+		Certificate: [][]byte{cert.Raw},
+		PrivateKey:  key,
+	}, nil
+
+	// if vaultClientCert != "" && vaultClientKey != "" {
+	// 	cert, err := tls.X509KeyPair([]byte(vaultClientCert), []byte(vaultClientKey))
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+
+	// 	return &cert, nil
+	// }
+
+	// if vaultClientCertPath != "" && vaultClientKeyPath != "" {
+	// 	cert, err := tls.LoadX509KeyPair(vaultClientCertPath, vaultClientKeyPath)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
+
+	// 	return &cert, nil
+	// }
+
+	// return nil, nil
 }
 
 // readCertificateFile reads the certificate at given path.
