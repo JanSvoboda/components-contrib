@@ -160,6 +160,22 @@ type vaultLoginResponse struct {
 	} `json:"auth"`
 }
 
+type vaultToken string
+
+type vaultAuthentication interface {
+	login() (vaultToken, error)
+}
+
+type clientAuthentication struct {
+	token     vaultToken
+	loginPath string
+	payload   io.ReadCloser
+}
+
+func (ca *clientAuthentication) login() (vaultToken, error) {
+	ca.loginPath = fmt.Sprintf("%s/auth/%s/login", v.vaultAddress, v.vaultAuthMethod)
+}
+
 // NewHashiCorpVaultSecretStore returns a new HashiCorp Vault secret store.
 func NewHashiCorpVaultSecretStore(logger logger.Logger) secretstores.SecretStore {
 	return &vaultSecretStore{
