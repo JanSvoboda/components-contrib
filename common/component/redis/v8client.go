@@ -86,8 +86,6 @@ func (c v8Client) ConfigurationSubscribe(ctx context.Context, args *Configuratio
 	defer p.Close()
 	for {
 		select {
-		case <-args.Stop:
-			return
 		case <-ctx.Done():
 			return
 		case msg := <-p.Channel():
@@ -316,9 +314,15 @@ func (c v8Client) TTLResult(ctx context.Context, key string) (time.Duration, err
 	return c.client.TTL(writeCtx, key).Result()
 }
 
-func newV8FailoverClient(s *Settings) RedisClient {
+func (c v8Client) AuthACL(ctx context.Context, username, password string) error {
+	pipeline := c.client.Pipeline()
+	statusCmd := pipeline.AuthACL(ctx, username, password)
+	return statusCmd.Err()
+}
+
+func newV8FailoverClient(s *Settings) (RedisClient, error) {
 	if s == nil {
-		return nil
+		return nil, nil
 	}
 	opts := &v8.FailoverOptions{
 		DB:                 s.DB,
@@ -340,10 +344,15 @@ func newV8FailoverClient(s *Settings) RedisClient {
 		IdleTimeout:        time.Duration(s.IdleTimeout),
 	}
 
-	/* #nosec */
 	if s.EnableTLS {
 		opts.TLSConfig = &tls.Config{
-			InsecureSkipVerify: s.EnableTLS,
+			InsecureSkipVerify: s.EnableTLS, //nolint:gosec
+		}
+		err := s.SetCertificate(func(cert *tls.Certificate) {
+			opts.TLSConfig.Certificates = []tls.Certificate{*cert}
+		})
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -355,7 +364,7 @@ func newV8FailoverClient(s *Settings) RedisClient {
 			readTimeout:  s.ReadTimeout,
 			writeTimeout: s.WriteTimeout,
 			dialTimeout:  s.DialTimeout,
-		}
+		}, nil
 	}
 
 	return v8Client{
@@ -363,12 +372,12 @@ func newV8FailoverClient(s *Settings) RedisClient {
 		readTimeout:  s.ReadTimeout,
 		writeTimeout: s.WriteTimeout,
 		dialTimeout:  s.DialTimeout,
-	}
+	}, nil
 }
 
-func newV8Client(s *Settings) RedisClient {
+func newV8Client(s *Settings) (RedisClient, error) {
 	if s == nil {
-		return nil
+		return nil, nil
 	}
 	if s.RedisType == ClusterType {
 		options := &v8.ClusterOptions{
@@ -393,6 +402,12 @@ func newV8Client(s *Settings) RedisClient {
 			options.TLSConfig = &tls.Config{
 				InsecureSkipVerify: s.EnableTLS,
 			}
+			err := s.SetCertificate(func(cert *tls.Certificate) {
+				options.TLSConfig.Certificates = []tls.Certificate{*cert}
+			})
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		return v8Client{
@@ -400,7 +415,7 @@ func newV8Client(s *Settings) RedisClient {
 			readTimeout:  s.ReadTimeout,
 			writeTimeout: s.WriteTimeout,
 			dialTimeout:  s.DialTimeout,
-		}
+		}, nil
 	}
 
 	options := &v8.Options{
@@ -427,6 +442,12 @@ func newV8Client(s *Settings) RedisClient {
 		options.TLSConfig = &tls.Config{
 			InsecureSkipVerify: s.EnableTLS,
 		}
+		err := s.SetCertificate(func(cert *tls.Certificate) {
+			options.TLSConfig.Certificates = []tls.Certificate{*cert}
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return v8Client{
@@ -434,7 +455,7 @@ func newV8Client(s *Settings) RedisClient {
 		readTimeout:  s.ReadTimeout,
 		writeTimeout: s.WriteTimeout,
 		dialTimeout:  s.DialTimeout,
-	}
+	}, nil
 }
 
 func ClientFromV8Client(client v8.UniversalClient) RedisClient {

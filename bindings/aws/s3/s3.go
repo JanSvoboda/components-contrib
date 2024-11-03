@@ -74,7 +74,7 @@ type s3Metadata struct {
 	SecretKey    string `json:"secretKey" mapstructure:"secretKey" mdignore:"true"`
 	SessionToken string `json:"sessionToken" mapstructure:"sessionToken" mdignore:"true"`
 
-	Region         string `json:"region" mapstructure:"region"`
+	Region         string `json:"region" mapstructure:"region" mapstructurealiases:"awsRegion" mdignore:"true"`
 	Endpoint       string `json:"endpoint" mapstructure:"endpoint"`
 	Bucket         string `json:"bucket" mapstructure:"bucket"`
 	DecodeBase64   bool   `json:"decodeBase64,string" mapstructure:"decodeBase64"`
@@ -313,7 +313,7 @@ func (s *AWSS3) get(ctx context.Context, req *bindings.InvokeRequest) (*bindings
 	if err != nil {
 		var awsErr awserr.Error
 		if errors.As(err, &awsErr) && awsErr.Code() == s3.ErrCodeNoSuchKey {
-			return nil, fmt.Errorf("object not found")
+			return nil, errors.New("object not found")
 		}
 		return nil, fmt.Errorf("s3 binding error: error downloading S3 object: %w", err)
 	}
@@ -348,7 +348,7 @@ func (s *AWSS3) delete(ctx context.Context, req *bindings.InvokeRequest) (*bindi
 	if err != nil {
 		var awsErr awserr.Error
 		if errors.As(err, &awsErr) && awsErr.Code() == s3.ErrCodeNoSuchKey {
-			return nil, fmt.Errorf("object not found")
+			return nil, errors.New("object not found")
 		}
 		return nil, fmt.Errorf("s3 binding error: delete operation failed: %w", err)
 	}

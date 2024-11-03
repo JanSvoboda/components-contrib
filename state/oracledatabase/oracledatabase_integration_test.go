@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"testing"
 	"time"
@@ -69,7 +68,7 @@ func TestOracleDatabaseIntegration(t *testing.T) {
 
 	ods := NewOracleDatabaseStateStore(logger.NewLogger("test"))
 	t.Cleanup(func() {
-		defer ods.(io.Closer).Close()
+		defer ods.Close()
 	})
 
 	if initerror := ods.Init(context.Background(), metadata); initerror != nil {
@@ -200,7 +199,7 @@ func testCreateTable(t *testing.T, dba *oracleDatabaseAccess) {
 }
 
 func dropTable(t *testing.T, db *sql.DB, tableName string) {
-	_, err := db.Exec(fmt.Sprintf("DROP TABLE %s", tableName))
+	_, err := db.Exec("DROP TABLE " + tableName)
 	require.NoError(t, err)
 }
 
@@ -214,9 +213,9 @@ func deleteItemThatDoesNotExist(t *testing.T, ods state.Store) {
 }
 
 func multiWithSetOnly(t *testing.T, ods state.Store) {
-	var operations []state.TransactionalStateOperation
-	var setRequests []state.SetRequest
-	for i := 0; i < 3; i++ {
+	var operations []state.TransactionalStateOperation //nolint:prealloc
+	var setRequests []state.SetRequest                 //nolint:prealloc
+	for range 3 {
 		req := state.SetRequest{
 			Key:   randomKey(),
 			Value: randomJSON(),
@@ -239,9 +238,9 @@ func multiWithSetOnly(t *testing.T, ods state.Store) {
 }
 
 func multiWithDeleteOnly(t *testing.T, ods state.Store) {
-	var operations []state.TransactionalStateOperation
-	var deleteRequests []state.DeleteRequest
-	for i := 0; i < 3; i++ {
+	var operations []state.TransactionalStateOperation //nolint:prealloc
+	var deleteRequests []state.DeleteRequest           //nolint:prealloc
+	for range 3 {
 		req := state.DeleteRequest{Key: randomKey()}
 
 		// Add the item to the database.
@@ -266,9 +265,9 @@ func multiWithDeleteOnly(t *testing.T, ods state.Store) {
 }
 
 func multiWithDeleteAndSet(t *testing.T, ods state.Store) {
-	var operations []state.TransactionalStateOperation
-	var deleteRequests []state.DeleteRequest
-	for i := 0; i < 3; i++ {
+	var operations []state.TransactionalStateOperation //nolint:prealloc
+	var deleteRequests []state.DeleteRequest           //nolint:prealloc
+	for range 3 {
 		req := state.DeleteRequest{Key: randomKey()}
 
 		// Add the item to the database.
@@ -282,8 +281,8 @@ func multiWithDeleteAndSet(t *testing.T, ods state.Store) {
 	}
 
 	// Create the set requests.
-	var setRequests []state.SetRequest
-	for i := 0; i < 3; i++ {
+	var setRequests []state.SetRequest //nolint:prealloc
+	for range 3 {
 		req := state.SetRequest{
 			Key:   randomKey(),
 			Value: randomJSON(),
@@ -672,7 +671,7 @@ func testInitConfiguration(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			p := NewOracleDatabaseStateStore(logger)
-			defer p.(io.Closer).Close()
+			defer p.Close()
 
 			metadata := state.Metadata{
 				Base: metadata.Base{Properties: tt.props},

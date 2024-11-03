@@ -15,7 +15,8 @@ package bindings
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"io"
 
 	"github.com/dapr/components-contrib/health"
 	"github.com/dapr/components-contrib/metadata"
@@ -28,6 +29,7 @@ type OutputBinding interface {
 	Init(ctx context.Context, metadata Metadata) error
 	Invoke(ctx context.Context, req *InvokeRequest) (*InvokeResponse, error)
 	Operations() []OperationKind
+	io.Closer
 }
 
 func PingOutBinding(ctx context.Context, outputBinding OutputBinding) error {
@@ -35,6 +37,6 @@ func PingOutBinding(ctx context.Context, outputBinding OutputBinding) error {
 	if outputBindingWithPing, ok := outputBinding.(health.Pinger); ok {
 		return outputBindingWithPing.Ping(ctx)
 	} else {
-		return fmt.Errorf("ping is not implemented by this output binding")
+		return errors.New("ping is not implemented by this output binding")
 	}
 }

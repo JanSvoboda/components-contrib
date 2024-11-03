@@ -119,6 +119,10 @@ func (r *StateStore) readFile(ctx context.Context, req *state.GetRequest) (*stat
 	}, nil
 }
 
+func (r *StateStore) Close() error {
+	return nil
+}
+
 func (r *StateStore) writeFile(ctx context.Context, req *state.SetRequest) error {
 	modifiedAccessConditions := blob.ModifiedAccessConditions{}
 
@@ -144,7 +148,6 @@ func (r *StateStore) writeFile(ctx context.Context, req *state.SetRequest) error
 
 	blockBlobClient := r.containerClient.NewBlockBlobClient(r.getFileNameFn(req.Key))
 	_, err = blockBlobClient.UploadBuffer(ctx, r.marshal(req), &uploadOptions)
-
 	if err != nil {
 		// Check if the error is due to ETag conflict
 		if req.HasETag() && isETagConflictError(err) {

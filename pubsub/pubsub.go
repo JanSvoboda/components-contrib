@@ -15,7 +15,8 @@ package pubsub
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"io"
 
 	"github.com/dapr/components-contrib/health"
 	"github.com/dapr/components-contrib/metadata"
@@ -29,7 +30,7 @@ type PubSub interface {
 	Features() []Feature
 	Publish(ctx context.Context, req *PublishRequest) error
 	Subscribe(ctx context.Context, req SubscribeRequest, handler Handler) error
-	Close() error
+	io.Closer
 }
 
 // BulkPublisher is the interface that wraps the BulkPublish method.
@@ -72,6 +73,6 @@ func Ping(ctx context.Context, pubsub PubSub) error {
 	if pubsubWithPing, ok := pubsub.(health.Pinger); ok {
 		return pubsubWithPing.Ping(ctx)
 	} else {
-		return fmt.Errorf("ping is not implemented by this pubsub")
+		return errors.New("ping is not implemented by this pubsub")
 	}
 }

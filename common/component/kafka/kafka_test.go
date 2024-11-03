@@ -65,7 +65,7 @@ func TestDeserializeValue(t *testing.T) {
 	}
 
 	schemaIDBytes := make([]byte, 4)
-	binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID()))
+	binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID())) //nolint:gosec
 
 	valJSON, _ := json.Marshal(testValue1)
 	codec, _ := goavro.NewCodecForStandardJSONFull(testSchema1)
@@ -219,7 +219,14 @@ func TestSerializeValueCachingDisabled(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	t.Run("value published null, no error", func(t *testing.T) {
+	t.Run("value published 'null', no error", func(t *testing.T) {
+		act, err := k.SerializeValue("my-topic", []byte("null"), map[string]string{"valueSchemaType": "Avro"})
+
+		require.Nil(t, act)
+		require.NoError(t, err)
+	})
+
+	t.Run("value published nil, no error", func(t *testing.T) {
 		act, err := k.SerializeValue("my-topic", nil, map[string]string{"valueSchemaType": "Avro"})
 
 		require.Nil(t, act)

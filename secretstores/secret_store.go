@@ -15,7 +15,8 @@ package secretstores
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"io"
 
 	"github.com/dapr/components-contrib/health"
 	"github.com/dapr/components-contrib/metadata"
@@ -33,6 +34,8 @@ type SecretStore interface {
 	BulkGetSecret(ctx context.Context, req BulkGetSecretRequest) (BulkGetSecretResponse, error)
 	// Features lists the features supported by the secret store.
 	Features() []Feature
+
+	io.Closer
 }
 
 func Ping(ctx context.Context, secretStore SecretStore) error {
@@ -40,6 +43,6 @@ func Ping(ctx context.Context, secretStore SecretStore) error {
 	if secretStoreWithPing, ok := secretStore.(health.Pinger); ok {
 		return secretStoreWithPing.Ping(ctx)
 	} else {
-		return fmt.Errorf("ping is not implemented by this secret store")
+		return errors.New("ping is not implemented by this secret store")
 	}
 }

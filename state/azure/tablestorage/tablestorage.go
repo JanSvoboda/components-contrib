@@ -211,6 +211,10 @@ func (r *StateStore) GetComponentMetadata() (metadataInfo mdutils.MetadataMap) {
 	return
 }
 
+func (r *StateStore) Close() error {
+	return nil
+}
+
 func NewAzureTablesStateStore(logger logger.Logger) state.Store {
 	s := &StateStore{
 		json:     jsoniter.ConfigFastest,
@@ -254,7 +258,6 @@ func (r *StateStore) writeRow(ctx context.Context, req *state.SetRequest) error 
 	// InsertOrReplace does not support ETag concurrency, therefore we will use Insert to check for key existence
 	// and then use Update to update the key if it exists with the specified ETag
 	_, err = r.client.AddEntity(writeContext, marshalledEntity, nil)
-
 	if err != nil {
 		// If Insert failed because item already exists, try to Update instead per Upsert semantics
 		if isEntityAlreadyExistsError(err) {

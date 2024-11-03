@@ -10,24 +10,33 @@ urls:
     url: https://docs.dapr.io/reference/components-reference/supported-pubsub/setup-redis-pubsub/
 capabilities:
   - ttl
+authenticationProfiles:
+  - title: "Username and password"
+    description: "Authenticate using username and password."
+    metadata:
+      - name: redisUsername
+        type: string
+        required: false
+        description: |
+          Username for Redis host. Defaults to empty. Make sure your Redis server
+          version is 6 or above, and have created ACL rule correctly.
+        example:  "my-username"
+        default: ""
+      - name: redisPassword
+        type: string
+        required: false
+        sensitive: true
+        description: |
+          Password for Redis host. No default. Use secretKeyRef for
+          secret reference
+        example:  "KeFg23!"
+        default: ""
 metadata:
   - name: redisHost
     required: true
     description: |
       Connection-string for the redis host. If "redisType" is "cluster" it can be multiple hosts separated by commas or just a single host
     example: '"redis-master.default.svc.cluster.local:6379"'
-    type: string
-  - name: redisPassword
-    required: true
-    sensitive: true
-    description: |
-      Password for Redis host. No Default. Can be "secretKeyRef" to use a secret reference
-    example: '"KeFg23!"'
-    type: string
-  - name: redisUsername
-    required: false
-    description: Username for Redis host. Defaults to empty. Make sure your redis server version is 6 or above, and have created acl rule correctly.
-    example: "default"
     type: string
   - name: consumerID
     required: false
@@ -37,9 +46,19 @@ metadata:
   - name: enableTLS
     required: false
     description: |
-      If the Redis instance supports TLS with public certificates, can be configured to be enabled or disabled. Defaults to "false".
+      If the Redis instance supports TLS, can be configured to be enabled or disabled. Defaults to "false".
     example: "false"
     type: bool
+  - name: clientCert
+    required: false
+    description: Client certificate for Redis host. No Default. Can be secretKeyRef to use a secret reference
+    example: ""
+    type: string
+  - name: clientKey
+    required: false
+    description: Client key for Redis host. No Default. Can be secretKeyRef to use a secret reference
+    example: ""
+    type: string
   - name: redeliverInterval
     required: false
     description: |
@@ -159,3 +178,18 @@ metadata:
     description: Maximum number of items inside a stream.The old entries are automatically evicted when the specified length is reached, so that the stream is left at a constant size. Defaults to unlimited.
     example: "10000"
     type: number
+builtinAuthenticationProfiles:
+  - name: "azuread"
+    metadata:
+      - name: useEntraID
+        required: false
+        default: "false"
+        example: "true"
+        type: bool
+        description: |
+          If set, enables authentication to Azure Cache for Redis using Microsoft EntraID. The Redis server must explicitly enable EntraID authentication. Note that
+          Azure Cache for Redis also requires the use of TLS, so `enableTLS` should be set. No username or password should be set.
+      - name: enableTLS
+        required: true
+        description: Must be set to true if using EntraID
+        example: "true"

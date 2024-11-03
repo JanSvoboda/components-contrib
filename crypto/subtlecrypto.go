@@ -15,6 +15,7 @@ package crypto
 
 import (
 	"context"
+	"io"
 
 	"github.com/lestrrat-go/jwx/v2/jwk"
 
@@ -22,6 +23,8 @@ import (
 )
 
 // SubtleCrypto offers an interface to perform low-level ("subtle") cryptographic operations with keys stored in a vault.
+//
+//nolint:interfacebloat
 type SubtleCrypto interface {
 	metadata.ComponentWithMetadata
 
@@ -165,6 +168,8 @@ type SubtleCrypto interface {
 		valid bool,
 		err error,
 	)
+
+	io.Closer
 }
 
 // SubtleCryptoAlgorithms is an extension to SubtleCrypto that includes methods to return information on the supported algorithms.

@@ -14,18 +14,25 @@ limitations under the License.
 package postgres
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/dapr/components-contrib/common/authentication/aws"
 	pgauth "github.com/dapr/components-contrib/common/authentication/postgresql"
 	kitmd "github.com/dapr/kit/metadata"
 )
 
+const (
+	defaultTimeout = 20 * time.Second // Default timeout for network requests
+)
+
 type metadata struct {
 	pgauth.PostgresAuthMetadata `mapstructure:",squash"`
-
-	ConfigTable       string        `mapstructure:"table"`
-	MaxIdleTimeoutOld time.Duration `mapstructure:"connMaxIdleTime"` // Deprecated alias for "connectionMaxIdleTime"
+	Timeout                     time.Duration `mapstructure:"timeout" mapstructurealiases:"timeoutInSeconds"`
+	ConfigTable                 string        `mapstructure:"table"`
+	MaxIdleTimeoutOld           time.Duration `mapstructure:"connMaxIdleTime"` // Deprecated alias for "connectionMaxIdleTime"
+	aws.AWSIAM                  `mapstructure:",squash"`
 }
 
 func (m *metadata) InitWithMetadata(meta map[string]string) error {
@@ -33,6 +40,7 @@ func (m *metadata) InitWithMetadata(meta map[string]string) error {
 	m.PostgresAuthMetadata.Reset()
 	m.ConfigTable = ""
 	m.MaxIdleTimeoutOld = 0
+	m.Timeout = defaultTimeout
 
 	err := kitmd.DecodeMetadata(meta, &m)
 	if err != nil {
@@ -46,7 +54,7 @@ func (m *metadata) InitWithMetadata(meta map[string]string) error {
 
 	// Validate and sanitize input
 	if m.ConfigTable == "" {
-		return fmt.Errorf("missing postgreSQL configuration table name")
+		return errors.New("missing postgreSQL configuration table name")
 	}
 	if len(m.ConfigTable) > maxIdentifierLength {
 		return fmt.Errorf("table name is too long - tableName : '%s'. max allowed field length is %d", m.ConfigTable, maxIdentifierLength)
@@ -55,8 +63,13 @@ func (m *metadata) InitWithMetadata(meta map[string]string) error {
 		return fmt.Errorf("invalid table name '%s'. non-alphanumerics or upper cased table names are not supported", m.ConfigTable)
 	}
 
-	// Azure AD auth is supported for this component
-	err = m.PostgresAuthMetadata.InitWithMetadata(meta, true)
+	opts := pgauth.InitWithMetadataOpts{
+		AzureADEnabled: true,
+		AWSIAMEnabled:  true,
+	}
+
+	// Azure AD & AWS IAM auth is supported for this component
+	err = m.PostgresAuthMetadata.InitWithMetadata(meta, opts)
 	if err != nil {
 		return err
 	}

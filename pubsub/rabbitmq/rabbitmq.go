@@ -31,6 +31,7 @@ import (
 	"github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/pubsub"
 	"github.com/dapr/kit/logger"
+	"github.com/dapr/kit/utils"
 )
 
 const (
@@ -48,17 +49,19 @@ const (
 	defaultHeartbeat        = 10 * time.Second
 	defaultLocale           = "en_US"
 
-	argQueueMode              = "x-queue-mode"
-	argMaxLength              = "x-max-length"
-	argMaxLengthBytes         = "x-max-length-bytes"
-	argDeadLetterExchange     = "x-dead-letter-exchange"
-	argMaxPriority            = "x-max-priority"
-	propertyClientName        = "connection_name"
-	queueModeLazy             = "lazy"
-	reqMetadataRoutingKey     = "routingKey"
-	reqMetadataQueueTypeKey   = "queueType" // at the moment, only supporting classic and quorum queues
-	reqMetadataMaxLenKey      = "maxLen"
-	reqMetadataMaxLenBytesKey = "maxLenBytes"
+	argQueueMode                       = "x-queue-mode"
+	argMaxLength                       = "x-max-length"
+	argMaxLengthBytes                  = "x-max-length-bytes"
+	argDeadLetterExchange              = "x-dead-letter-exchange"
+	argMaxPriority                     = "x-max-priority"
+	argSingleActiveConsumer            = "x-single-active-consumer"
+	propertyClientName                 = "connection_name"
+	queueModeLazy                      = "lazy"
+	reqMetadataRoutingKey              = "routingKey"
+	reqMetadataQueueTypeKey            = "queueType" // at the moment, only supporting classic and quorum queues
+	reqMetadataSingleActiveConsumerKey = "singleActiveConsumer"
+	reqMetadataMaxLenKey               = "maxLen"
+	reqMetadataMaxLenBytesKey          = "maxLenBytes"
 )
 
 // RabbitMQ allows sending/receiving messages in pub/sub format.
@@ -131,7 +134,6 @@ func dial(protocol, uri, clientName string, heartBeat time.Duration, tlsCfg *tls
 		}
 	}
 	conn, err = amqp.DialConfig(uri, cfg)
-
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,7 +271,7 @@ func (r *rabbitMQ) publishSync(ctx context.Context, req *pubsub.PublishRequest) 
 		// Blocks until the server confirms
 		ok := confirm.Wait()
 		if !ok {
-			err = fmt.Errorf("did not receive confirmation of publishing")
+			err = errors.New("did not receive confirmation of publishing")
 			r.logger.Errorf("%s publishing to %s failed: %v", logMessagePrefix, req.Topic, err)
 		}
 	}
@@ -432,6 +434,11 @@ func (r *rabbitMQ) prepareSubscription(channel rabbitMQChannelBroker, req pubsub
 		args[amqp.QueueTypeArg] = amqp.QueueTypeClassic
 	}
 
+	// Applying x-single-active-consumer if defined at subscription level
+	if val := req.Metadata[reqMetadataSingleActiveConsumerKey]; utils.IsTruthy(val) {
+		args[argSingleActiveConsumer] = true
+	}
+
 	// Applying x-max-length-bytes if defined at subscription level
 	if val, ok := req.Metadata[reqMetadataMaxLenBytesKey]; ok && val != "" {
 		parsedVal, pErr := strconv.ParseUint(val, 10, 0)
@@ -474,7 +481,7 @@ func (r *rabbitMQ) prepareSubscription(channel rabbitMQChannelBroker, req pubsub
 		metadataRoutingKey = val
 	}
 	routingKeys := strings.Split(metadataRoutingKey, ",")
-	for i := 0; i < len(routingKeys); i++ {
+	for i := range routingKeys {
 		routingKey := routingKeys[i]
 		r.logger.Debugf("%s binding queue '%s' to exchange '%s' with routing key '%s'", logMessagePrefix, q.Name, req.Topic, routingKey)
 		err = channel.QueueBind(q.Name, routingKey, req.Topic, false, nil)
@@ -513,7 +520,6 @@ func (r *rabbitMQ) subscribeForever(ctx context.Context, req pubsub.SubscribeReq
 		)
 		for {
 			channel, connectionCount, q, err = r.ensureSubscription(req, queueName)
-
 			if err != nil {
 				errFuncName = "ensureSubscription"
 				break
@@ -521,7 +527,7 @@ func (r *rabbitMQ) subscribeForever(ctx context.Context, req pubsub.SubscribeReq
 
 			msgs, err = channel.Consume(
 				q.Name,
-				queueName,          // consumerId
+				queueName,          // consumerID
 				r.metadata.AutoAck, // autoAck
 				false,              // exclusive
 				false,              // noLocal

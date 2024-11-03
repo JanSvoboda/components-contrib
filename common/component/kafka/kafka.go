@@ -14,6 +14,7 @@ limitations under the License.
 package kafka
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -44,6 +45,7 @@ type Kafka struct {
 	saslPassword  string
 	initialOffset int64
 	config        *sarama.Config
+	escapeHeaders bool
 
 	cg              sarama.ConsumerGroup
 	subscribeTopics TopicHandlerConfig
@@ -135,6 +137,7 @@ func (k *Kafka) Init(ctx context.Context, metadata map[string]string) error {
 	k.consumerGroup = meta.ConsumerGroup
 	k.initialOffset = meta.internalInitialOffset
 	k.authType = meta.AuthType
+	k.escapeHeaders = meta.EscapeHeaders
 
 	config := sarama.NewConfig()
 	config.Version = meta.internalVersion
@@ -178,7 +181,7 @@ func (k *Kafka) Init(ctx context.Context, metadata map[string]string) error {
 	case certificateAuthType:
 		// already handled in updateTLSConfig
 	case awsIAMAuthType:
-		k.logger.Info("Configuring AWS IAM authentcation")
+		k.logger.Info("Configuring AWS IAM authentication")
 		err = updateAWSIAMAuthInfo(k.internalContext, config, meta)
 		if err != nil {
 			return err
@@ -263,7 +266,9 @@ func getSchemaSubject(topic string) string {
 }
 
 func (k *Kafka) DeserializeValue(message *sarama.ConsumerMessage, config SubscriptionHandlerConfig) ([]byte, error) {
-	// Null Data is valid and a tombstone record. It shouldn't be serialized
+	// Null Data is valid and a tombstone record.
+	// It shouldn't be going through schema validation and decoding
+	// Instead directly convert to JSON `null`
 	if message.Value == nil {
 		return []byte("null"), nil
 	}
@@ -275,7 +280,7 @@ func (k *Kafka) DeserializeValue(message *sarama.ConsumerMessage, config Subscri
 			return nil, err
 		}
 		if len(message.Value) < 5 {
-			return nil, fmt.Errorf("value is too short")
+			return nil, errors.New("value is too short")
 		}
 		schemaID := binary.BigEndian.Uint32(message.Value[1:5])
 		schema, err := srClient.GetSchema(int(schemaID))
@@ -354,8 +359,9 @@ func (k *Kafka) getSchemaRegistyClient() (srclient.ISchemaRegistryClient, error)
 }
 
 func (k *Kafka) SerializeValue(topic string, data []byte, metadata map[string]string) ([]byte, error) {
-	// Null Data is valid and a tombstone record. It shouldn't be serialized
-	if data == nil {
+	// Null Data is valid and a tombstone record.
+	// It should be converted to NULL and not go through schema validation & encoding
+	if bytes.Equal(data, []byte("null")) || data == nil {
 		return nil, nil
 	}
 
@@ -381,7 +387,7 @@ func (k *Kafka) SerializeValue(topic string, data []byte, metadata map[string]st
 			return nil, err
 		}
 		schemaIDBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID()))
+		binary.BigEndian.PutUint32(schemaIDBytes, uint32(schema.ID())) //nolint:gosec
 
 		recordValue := make([]byte, 0, len(schemaIDBytes)+len(valueBytes)+1)
 		recordValue = append(recordValue, byte(0))

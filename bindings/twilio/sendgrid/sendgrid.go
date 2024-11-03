@@ -136,7 +136,7 @@ func (sg *SendGrid) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*b
 		fromAddress = mail.NewEmail(fromName, req.Metadata["emailFrom"])
 	}
 	if fromAddress == nil {
-		return nil, fmt.Errorf("error SendGrid from email not supplied")
+		return nil, errors.New("error SendGrid from email not supplied")
 	}
 
 	// Build email to address, this is required
@@ -160,7 +160,7 @@ func (sg *SendGrid) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*b
 		toAddress = mail.NewEmail(toName, req.Metadata["emailTo"])
 	}
 	if toAddress == nil {
-		return nil, fmt.Errorf("error SendGrid to email not supplied")
+		return nil, errors.New("error SendGrid to email not supplied")
 	}
 
 	// Build email subject, this is required
@@ -172,7 +172,7 @@ func (sg *SendGrid) Invoke(ctx context.Context, req *bindings.InvokeRequest) (*b
 		subject = req.Metadata["subject"]
 	}
 	if subject == "" {
-		return nil, fmt.Errorf("error SendGrid subject not supplied")
+		return nil, errors.New("error SendGrid subject not supplied")
 	}
 
 	// Build email cc address, this is optional
@@ -271,11 +271,19 @@ func (sg *SendGrid) GetComponentMetadata() (metadataInfo metadata.MetadataMap) {
 	return
 }
 
+func (sg *SendGrid) Close() error {
+	return nil
+}
+
 // Function that unmarshals the Dynamic Template Data JSON String into a map[string]any.
 func UnmarshalDynamicTemplateData(jsonString string, result *map[string]any) error {
 	err := json.Unmarshal([]byte(jsonString), &result)
 	if err != nil {
 		return fmt.Errorf("error from SendGrid binding, dynamic template data is not valid JSON: %w", err)
 	}
+	return nil
+}
+
+func Close() error {
 	return nil
 }

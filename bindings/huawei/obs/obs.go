@@ -104,16 +104,16 @@ func (o *HuaweiOBS) parseMetadata(meta bindings.Metadata) (*obsMetadata, error) 
 	}
 
 	if m.Bucket == "" {
-		return nil, fmt.Errorf("missing obs bucket name")
+		return nil, errors.New("missing obs bucket name")
 	}
 	if m.Endpoint == "" {
-		return nil, fmt.Errorf("missing obs endpoint")
+		return nil, errors.New("missing obs endpoint")
 	}
 	if m.AccessKey == "" {
-		return nil, fmt.Errorf("missing the huawei access key")
+		return nil, errors.New("missing the huawei access key")
 	}
 	if m.SecretKey == "" {
-		return nil, fmt.Errorf("missing the huawei secret key")
+		return nil, errors.New("missing the huawei secret key")
 	}
 
 	o.logger.Debugf("Huawei OBS metadata=[%s]", m)
@@ -212,7 +212,7 @@ func (o *HuaweiOBS) get(ctx context.Context, req *bindings.InvokeRequest) (*bind
 	if val, ok := req.Metadata[metadataKey]; ok && val != "" {
 		key = val
 	} else {
-		return nil, fmt.Errorf("obs binding error: can't read key value")
+		return nil, errors.New("obs binding error: can't read key value")
 	}
 
 	input := &obs.GetObjectInput{}
@@ -252,7 +252,7 @@ func (o *HuaweiOBS) delete(ctx context.Context, req *bindings.InvokeRequest) (*b
 	if val, ok := req.Metadata[metadataKey]; ok && val != "" {
 		key = val
 	} else {
-		return nil, fmt.Errorf("obs binding error: can't read key value")
+		return nil, errors.New("obs binding error: can't read key value")
 	}
 
 	input := &obs.DeleteObjectInput{}
@@ -337,4 +337,11 @@ func (o *HuaweiOBS) GetComponentMetadata() (metadataInfo metadata.MetadataMap) {
 	metadataStruct := obsMetadata{}
 	metadata.GetMetadataInfoFromStructType(reflect.TypeOf(metadataStruct), &metadataInfo, metadata.BindingType)
 	return
+}
+
+func (o *HuaweiOBS) Close() error {
+	if o.service != nil {
+		o.service.Close()
+	}
+	return nil
 }

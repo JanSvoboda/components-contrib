@@ -99,6 +99,9 @@ func (h *HTTPSource) Init(_ context.Context, meta bindings.Metadata) error {
 	if err != nil {
 		return err
 	}
+	if tlsConfig == nil {
+		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+	}
 	if h.metadata.MTLSClientCert != "" && h.metadata.MTLSClientKey != "" {
 		err = h.readMTLSClientCertificates(tlsConfig)
 		if err != nil {
@@ -122,11 +125,10 @@ func (h *HTTPSource) Init(_ context.Context, meta bindings.Metadata) error {
 	dialer := &net.Dialer{
 		Timeout: 15 * time.Second,
 	}
-	netTransport := &http.Transport{
-		Dial:                dialer.Dial,
-		TLSHandshakeTimeout: 15 * time.Second,
-		TLSClientConfig:     tlsConfig,
-	}
+	netTransport := http.DefaultTransport.(*http.Transport).Clone()
+	netTransport.DialContext = dialer.DialContext
+	netTransport.TLSHandshakeTimeout = 15 * time.Second
+	netTransport.TLSClientConfig = tlsConfig
 
 	h.client = &http.Client{
 		Timeout:   0, // no time out here, we use request timeouts instead
@@ -156,9 +158,6 @@ func (h *HTTPSource) readMTLSClientCertificates(tlsConfig *tls.Config) error {
 	cert, err := tls.X509KeyPair(clientCertBytes, clientKeyBytes)
 	if err != nil {
 		return fmt.Errorf("failed to load client certificate: %w", err)
-	}
-	if tlsConfig == nil {
-		tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 	}
 	tlsConfig.Certificates = []tls.Certificate{cert}
 	return nil
@@ -370,4 +369,8 @@ func (h *HTTPSource) GetComponentMetadata() (metadataInfo metadata.MetadataMap) 
 	metadataStruct := httpMetadata{}
 	metadata.GetMetadataInfoFromStructType(reflect.TypeOf(metadataStruct), &metadataInfo, metadata.BindingType)
 	return
+}
+
+func (h *HTTPSource) Close() error {
+	return nil
 }

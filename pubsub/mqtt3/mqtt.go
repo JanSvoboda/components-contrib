@@ -181,8 +181,6 @@ func (m *mqttPubSub) Subscribe(ctx context.Context, req pubsub.SubscribeRequest,
 		}
 
 		// Delete the topic from the map first, which stops routing messages to handlers
-		m.subscribingLock.Lock()
-		defer m.subscribingLock.Unlock()
 		delete(m.topics, topic)
 
 		// We will call Unsubscribe only if cleanSession is true or if "unsubscribeOnClose" in the request metadata is true
@@ -461,7 +459,7 @@ func buildRegexForTopic(topicName string) string {
 	if strings.ContainsAny(topicName, "#+") {
 		regexStr = "^"
 		// It's ok to iterate over bytes here (rather than codepoints) because all characters we're looking for are always single-byte
-		for i := 0; i < len(topicName); i++ {
+		for i := range len(topicName) {
 			// Wildcard chars must either be at the beginning of the string or must follow a /
 			okPos = (i == 0 || topicName[i-1] == '/')
 			if topicName[i] == '#' && okPos {

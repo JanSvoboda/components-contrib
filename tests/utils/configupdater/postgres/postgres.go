@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	pgauth "github.com/dapr/components-contrib/common/authentication/postgresql"
 	"github.com/dapr/components-contrib/configuration"
+	"github.com/dapr/components-contrib/metadata"
 	"github.com/dapr/components-contrib/tests/utils/configupdater"
 	"github.com/dapr/kit/logger"
 	"github.com/dapr/kit/utils"
@@ -84,11 +86,16 @@ func (r *ConfigUpdater) CreateTrigger(channel string) error {
 }
 
 func (r *ConfigUpdater) Init(props map[string]string) error {
+	connString, _ := metadata.GetMetadataProperty(props, "connectionString")
+	useAzureAd, _ := metadata.GetMetadataProperty(props, "useAzureAD")
+	useAwsIam, _ := metadata.GetMetadataProperty(props, "useAWSIAM")
+
 	md := pgauth.PostgresAuthMetadata{
-		ConnectionString: props["connectionString"],
-		UseAzureAD:       utils.IsTruthy(props["useAzureAD"]),
+		ConnectionString: connString,
+		UseAzureAD:       utils.IsTruthy(useAzureAd),
+		UseAWSIAM:        utils.IsTruthy(useAwsIam),
 	}
-	err := md.InitWithMetadata(props, true)
+	err := md.InitWithMetadata(props, pgauth.InitWithMetadataOpts{AzureADEnabled: true, AWSIAMEnabled: true})
 	if err != nil {
 		return err
 	}
@@ -99,7 +106,7 @@ func (r *ConfigUpdater) Init(props map[string]string) error {
 	if tbl, ok := props["table"]; ok && tbl != "" {
 		r.configTable = tbl
 	} else {
-		return fmt.Errorf("missing postgreSQL configuration table name")
+		return errors.New("missing postgreSQL configuration table name")
 	}
 
 	config, err := md.GetPgxPoolConfig()
@@ -128,7 +135,7 @@ func buildAddQuery(items map[string]*configuration.Item, configTable string) (st
 	paramWildcard := make([]string, 0, len(items))
 	params := make([]interface{}, 0, 4*len(items))
 	if len(items) == 0 {
-		return query, params, fmt.Errorf("empty list of items")
+		return query, params, errors.New("empty list of items")
 	}
 	var queryBuilder strings.Builder
 	queryBuilder.WriteString("INSERT INTO " + configTable + " (KEY, VALUE, VERSION, METADATA) VALUES ")
@@ -158,7 +165,7 @@ func (r *ConfigUpdater) AddKey(items map[string]*configuration.Item) error {
 
 func (r *ConfigUpdater) UpdateKey(items map[string]*configuration.Item) error {
 	if len(items) == 0 {
-		return fmt.Errorf("empty list of items")
+		return errors.New("empty list of items")
 	}
 	for key, item := range items {
 		var params []interface{}
@@ -174,7 +181,7 @@ func (r *ConfigUpdater) UpdateKey(items map[string]*configuration.Item) error {
 
 func (r *ConfigUpdater) DeleteKey(keys []string) error {
 	if len(keys) == 0 {
-		return fmt.Errorf("empty list of items")
+		return errors.New("empty list of items")
 	}
 	for _, key := range keys {
 		var params []interface{}

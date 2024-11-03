@@ -81,7 +81,6 @@ type CosmosItem struct {
 const (
 	metadataPartitionKey = "partitionKey"
 	defaultTimeout       = 20 * time.Second
-	statusNotFound       = "NotFound"
 )
 
 // Policy that makes all queries cross-partition
@@ -228,8 +227,7 @@ func (c *StateStore) Get(ctx context.Context, req *state.GetRequest) (*state.Get
 	defer cancel()
 	readItem, err := c.client.ReadItem(readCtx, azcosmos.NewPartitionKeyString(partitionKey), req.Key, &options)
 	if err != nil {
-		var responseErr *azcore.ResponseError
-		if errors.As(err, &responseErr) && responseErr.ErrorCode == "NotFound" {
+		if isNotFoundError(err) {
 			return &state.GetResponse{}, nil
 		}
 		return nil, err
@@ -625,6 +623,10 @@ func (c *StateStore) Ping(ctx context.Context) error {
 	return nil
 }
 
+func (c *StateStore) Close() error {
+	return nil
+}
+
 func createUpsertItem(contentType string, req state.SetRequest, partitionKey string) (CosmosItem, error) {
 	byteArray, isBinary := req.Value.([]byte)
 	if len(byteArray) == 0 {
@@ -690,9 +692,10 @@ func isNotFoundError(err error) bool {
 	}
 
 	if requestError, ok := err.(*azcore.ResponseError); ok {
-		if requestError.ErrorCode == statusNotFound {
+		if requestError.StatusCode == http.StatusNotFound {
 			return true
 		}
+		// we previously checked the error code, but unfortunately this is not stable between API versions
 	}
 
 	return false

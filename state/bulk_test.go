@@ -80,7 +80,7 @@ func TestBulkStore(t *testing.T) {
 		require.True(t, ok)
 		errs := merr.Unwrap()
 		require.Len(t, errs, 2)
-		for i := 0; i < 2; i++ {
+		for i := range 2 {
 			var bse BulkStoreError
 			require.ErrorAs(t, errs[i], &bse)
 			assert.True(t, bse.key == "error-key1" || bse.key == "error-key2")
@@ -161,6 +161,10 @@ func (s *storeBulk) Set(ctx context.Context, req *SetRequest) error {
 	if strings.Contains(req.Key, "error-key") {
 		return errSimulated
 	}
+	return nil
+}
+
+func (s *storeBulk) Close() error {
 	return nil
 }
 
